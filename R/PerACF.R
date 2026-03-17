@@ -29,6 +29,7 @@
 #' PerACF(data.set)
 #' PerACF(data.set, type = "covariance", lag.max = 10)
 PerACF <- function(x, lag.max = NULL, type = c("correlation", "covariance"), plot = TRUE, na.action = na.fail, demean = TRUE, ...) {
+  # Validate inputs and normalize time-series structure.
   type <- match.arg(type)
   series <- deparse(substitute(x))
   x <- na.action(as.ts(x))
@@ -50,55 +51,46 @@ PerACF <- function(x, lag.max = NULL, type = c("correlation", "covariance"), plo
     stop("'lag.max' must be at least 0")
   }
   if (demean) {
+    # Remove sample means before spectral estimation when requested.
     x <- sweep(x, 2, colMeans(x, na.rm = TRUE), check.margin = FALSE)
   }
   lag <- matrix(1, nser, nser)
   lag[lower.tri(lag)] <- -1
-  acf.per <- matrix(1, lag.max, 1)
   acf.per <- array(1, c(lag.max, nser, nser))
   if (nser == 1L) { # Univariate
-    periodogram <- c(0, PerioReg(x))
-    dmatrix <- diag(periodogram)
-    gmatx <- Gmat(sampleT)
-    covMatrix <- 2 * pi * Re(Conj(t(gmatx)) %*% dmatrix %*% gmatx)
-    acf.per[, 1, 1] <- covMatrix[1, 1:lag.max]
-    if (type == "correlation") {
+    # Diagonal (auto) term: inverse spectral transform of the periodogram.
+    periodogram <- c(0, PerioReg(x[, 1L]))
+    acf.per[, 1, 1] <- .first_row_spectral_transform(periodogram, lag.max, scale = 2 * pi)
+    if (type == "correlation" && lag.max > 0L) {
       acf.per <- acf.per / acf.per[1]
     }
   }
   else { # Multivariate
-    for (i in 1:nser) {
-      for (j in i:nser) {
-        if (i == j) {
-          periodogram <- c(0, PerioReg(x[, i]))
-          dmatrix <- diag(periodogram)
-          gmatx <- Gmat(sampleT)
-          covMatrix <- 2 * pi * Re(Conj(t(gmatx)) %*% dmatrix %*% gmatx)
-          acf.per[, i, j] <- covMatrix[1, 1:lag.max]
-        }
-        else {
-          crossperi <- CrossPeriodogram(x[, i], x[, j])
-          gmatx <- Gmat(sampleT)
-          dmatrix <- diag(crossperi$cross.periodxy)
-          covMatrix <- Re(Conj(t(gmatx)) %*% dmatrix %*% gmatx) / 2
-          acf.per[, i, j] <- covMatrix[1, 1:lag.max]
-
-          dmatrix <- diag(crossperi$cross.periodyx)
-          covMatrix <- Re(Conj(t(gmatx)) %*% dmatrix %*% gmatx) / 2
-          acf.per[, j, i] <- covMatrix[1, 1:lag.max]
-        }
+    # First compute all marginal auto-covariance sequences.
+    for (i in seq_len(nser)) {
+      periodogram <- c(0, PerioReg(x[, i]))
+      acf.per[, i, i] <- .first_row_spectral_transform(periodogram, lag.max, scale = 2 * pi)
+    }
+    # Then compute each cross pair once and fill both matrix orientations.
+    for (i in seq_len(nser - 1L)) {
+      for (j in seq.int(i + 1L, nser)) {
+        crossperi <- CrossPeriodogram(x[, i], x[, j])
+        acf.per[, i, j] <- .first_row_spectral_transform(crossperi$cross.periodxy, lag.max, scale = 1 / 2)
+        acf.per[, j, i] <- .first_row_spectral_transform(crossperi$cross.periodyx, lag.max, scale = 1 / 2)
       }
     }
-    if (type == "correlation") {
-      for (i in 1:nser) {
-        for (j in 1:nser) {
-          if (i != j) {
-            acf.per[, i, j] <- acf.per[, i, j] / (sqrt(acf.per[, i, i][1]) * sqrt(acf.per[, j, j][1]))
-          }
-        }
+    if (type == "correlation" && lag.max > 0L) {
+      # Convert covariance sequences to correlation sequences.
+      var0 <- sqrt(diag(acf.per[1L, , , drop = TRUE]))
+      for (i in seq_len(nser)) {
+        acf.per[, i, i] <- acf.per[, i, i] / acf.per[1L, i, i]
       }
-      for (i in 1:nser) {
-        acf.per[, i, i] <- acf.per[, i, i] / acf.per[, i, i][1]
+      for (i in seq_len(nser - 1L)) {
+        for (j in seq.int(i + 1L, nser)) {
+          scale.ij <- var0[i] * var0[j]
+          acf.per[, i, j] <- acf.per[, i, j] / scale.ij
+          acf.per[, j, i] <- acf.per[, j, i] / scale.ij
+        }
       }
     }
   }

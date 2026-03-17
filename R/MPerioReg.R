@@ -11,31 +11,20 @@
 #' @examples
 #' MPerioReg(ldeaths)
 MPerioReg <- function(series) {
+  # Estimate robust harmonic coefficients via M-regression.
   n <- length(series)
-  perior <- FFT <- NULL
-  g <- n %/% 2
-  for (j in 1:g) {
-    X1 <- X2 <- NULL
-    w <- 2 * pi * j / n
-    for (i in 1:n) {
-      X1[i] <- cos(w * i)
-      X2[i] <- sin(w * i)
-    }
-    if (j != (n / 2)) {
-      MX <- cbind(X1, X2)
-      fitrob <- rlm(series ~ MX - 1, method = "M", psi = MASS::psi.huber)
-      FFT[j] <- sqrt(n / (8 * pi)) * complex(real = fitrob$coef[1], imaginary = -fitrob$coef[2])
-    }
-    else {
-      MX <- cbind(X1)
-      fitrob <- rlm(series ~ MX - 1, method = "M", psi = MASS::psi.huber)
-      FFT[j] <- sqrt(n / (2 * pi)) * complex(real = fitrob$coef[1], imaginary = -0)
-    }
-    perior[j] <- Mod(FFT[j])^2
+  fft.half <- .harmonic_fft(series, robust = TRUE)
+  g <- length(fft.half)
+  if (g == 0L) {
+    return(numeric(0L))
   }
-  if ((n %% 2) != 0) {
-    return(c(perior, rev(perior)))
-  } else {
-    return(c(perior, rev(perior))[-g])
+
+  scale.factor <- rep.int(sqrt(n / (8 * pi)), g)
+  if ((n %% 2L) == 0L) {
+    scale.factor[g] <- sqrt(n / (2 * pi))
   }
+
+  # Convert coefficients into robust M-periodogram ordinates and mirror them.
+  perior.half <- Mod(scale.factor * fft.half)^2
+  .mirror_half_spectrum(perior.half, n)
 }

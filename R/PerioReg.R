@@ -10,31 +10,20 @@
 #' @examples
 #' PerioReg(ldeaths)
 PerioReg <- function(series) {
+  # Estimate the harmonic-regression coefficients on positive frequencies.
   n <- length(series)
-  perior <- FFT <- NULL
-  g <- n %/% 2
-  for (j in 1:g) {
-    X1 <- X2 <- NULL
-    w <- 2 * pi * j / n
-    for (i in 1:n) {
-      X1[i] <- cos(w * i)
-      X2[i] <- sin(w * i)
-    }
-    if (j != (n / 2)) {
-      MX <- cbind(X1, X2)
-      fit <- lm(series ~ MX - 1)
-      FFT[j] <- sqrt(n / (8 * pi)) * complex(real = fit$coef[1], imaginary = -fit$coef[2])
-    }
-    else {
-      MX <- cbind(X1)
-      fit <- lm(series ~ MX - 1)
-      FFT[j] <- sqrt(n / (2 * pi)) * complex(real = fit$coef[1], imaginary = -0)
-    }
-    perior[j] <- Mod(FFT[j])^2
+  fft.half <- .harmonic_fft(series, robust = FALSE)
+  g <- length(fft.half)
+  if (g == 0L) {
+    return(numeric(0L))
   }
-  if ((n %% 2) != 0) {
-    return(c(perior, rev(perior)))
-  } else {
-    return(c(perior, rev(perior))[-g])
+
+  scale.factor <- rep.int(sqrt(n / (8 * pi)), g)
+  if ((n %% 2L) == 0L) {
+    scale.factor[g] <- sqrt(n / (2 * pi))
   }
+
+  # Convert coefficients into periodogram ordinates and mirror the spectrum.
+  perior.half <- Mod(scale.factor * fft.half)^2
+  .mirror_half_spectrum(perior.half, n)
 }

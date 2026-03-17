@@ -9,6 +9,7 @@
 #' data.set <- cbind(fdeaths, mdeaths)
 #' CovCorMPer(data.set)
 CovCorMPer <- function(x, type = c("correlation", "covariance")) {
+  # Match the requested output scale and extract lag-0 matrix from MPerACF.
   type <- match.arg(type)
   mat.comp <- MPerACF(x, lag.max = 1, plot = FALSE, type)$acf
   return(mat.comp[1, , ])

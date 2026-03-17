@@ -1,0 +1,257 @@
+## ----include = FALSE----------------------------------------------------------
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+## -----------------------------------------------------------------------------
+library(acfMPeriod)
+
+pm10_candidates <- c(
+  system.file("extdata", "pm10data.csv", package = "acfMPeriod"),
+  file.path("inst", "extdata", "pm10data.csv"),
+  file.path("..", "inst", "extdata", "pm10data.csv")
+)
+pm10_candidates <- pm10_candidates[nzchar(pm10_candidates)]
+pm10_path <- pm10_candidates[file.exists(pm10_candidates)][1]
+stopifnot(length(pm10_path) == 1L, nzchar(pm10_path))
+
+pm10 <- as.matrix(read.csv(pm10_path, check.names = FALSE))
+
+uni_stations <- c("Laranjeiras", "Cariacica")
+multi_stations <- c("Laranjeiras", "Cariacica", "Carapina", "Camburi")
+x_multi <- pm10[, multi_stations, drop = FALSE]
+
+lag_max <- 12L
+# PerACF/MPerACF return lags 0:(lag.max - 1), so lag.max + 1 includes lag 12.
+lag_max_reg <- lag_max + 1L
+
+dim(pm10)
+colnames(pm10)
+head(pm10, 3)
+summary(pm10[, uni_stations, drop = FALSE])
+
+## -----------------------------------------------------------------------------
+lag_values <- function(obj, i = 1, j = 1, max_lag = 12) {
+  lag_vec <- as.numeric(obj$lag[, i, j])
+  keep <- lag_vec <= max_lag
+  data.frame(
+    lag = lag_vec[keep],
+    value = as.numeric(obj$acf[keep, i, j])
+  )
+}
+
+compare_three <- function(reg_standard, reg_robust, stats_standard, i = 1, j = 1, max_lag = 12) {
+  x_std <- lag_values(reg_standard, i = i, j = j, max_lag = max_lag)
+  x_rob <- lag_values(reg_robust, i = i, j = j, max_lag = max_lag)
+  x_sta <- lag_values(stats_standard, i = i, j = j, max_lag = max_lag)
+  out <- data.frame(
+    lag = x_std$lag,
+    reg_standard = x_std$value,
+    reg_robust = x_rob$value,
+    stats_standard = x_sta$value
+  )
+  out$diff_reg_stats <- out$reg_standard - out$stats_standard
+  out$diff_rob_reg <- out$reg_robust - out$reg_standard
+  out$diff_rob_stats <- out$reg_robust - out$stats_standard
+  out
+}
+
+pair_indices <- rbind(
+  cbind(seq_along(multi_stations), seq_along(multi_stations)),
+  t(utils::combn(seq_along(multi_stations), 2))
+)
+pair_labels <- apply(pair_indices, 1, function(idx) {
+  paste(multi_stations[idx[1]], "vs", multi_stations[idx[2]])
+})
+
+## ----fig.width = 12, fig.height = 9-------------------------------------------
+op <- par(mfrow = c(4, 2), mar = c(3, 3, 2, 1))
+for (st in colnames(pm10)) {
+  plot(pm10[, st], type = "l", xlab = "Time index", ylab = "PM10", main = st, col = "#1B6CA8")
+}
+par(op)
+
+## -----------------------------------------------------------------------------
+rob_cor_lag0 <- CovCorMPer(x_multi, type = "correlation")
+rob_cov_lag0 <- CovCorMPer(x_multi, type = "covariance")
+
+round(rob_cor_lag0, 4)
+round(rob_cov_lag0, 4)
+
+## -----------------------------------------------------------------------------
+rob_uni_acf <- setNames(
+  lapply(uni_stations, function(st) {
+    MPerACF(pm10[, st], lag.max = lag_max_reg, type = "correlation", plot = FALSE)
+  }),
+  uni_stations
+)
+rob_uni_acovf <- setNames(
+  lapply(uni_stations, function(st) {
+    MPerACF(pm10[, st], lag.max = lag_max_reg, type = "covariance", plot = FALSE)
+  }),
+  uni_stations
+)
+
+rob_multi_acf <- MPerACF(x_multi, lag.max = lag_max_reg, type = "correlation", plot = FALSE)
+rob_multi_acovf <- MPerACF(x_multi, lag.max = lag_max_reg, type = "covariance", plot = FALSE)
+
+c(
+  total_observations = nrow(pm10),
+  laranjeiras_n_used = rob_uni_acf[["Laranjeiras"]]$n.used,
+  cariacica_n_used = rob_uni_acf[["Cariacica"]]$n.used,
+  multivariate_n_used = rob_multi_acf$n.used
+)
+
+## -----------------------------------------------------------------------------
+rob_uni_acf_values <- setNames(
+  lapply(uni_stations, function(st) {
+    round(lag_values(rob_uni_acf[[st]], max_lag = lag_max), 4)
+  }),
+  uni_stations
+)
+rob_uni_acovf_values <- setNames(
+  lapply(uni_stations, function(st) {
+    round(lag_values(rob_uni_acovf[[st]], max_lag = lag_max), 4)
+  }),
+  uni_stations
+)
+
+rob_uni_acf_values
+rob_uni_acovf_values
+
+## -----------------------------------------------------------------------------
+rob_multi_acf_values <- setNames(
+  lapply(seq_len(nrow(pair_indices)), function(k) {
+    i <- pair_indices[k, 1]
+    j <- pair_indices[k, 2]
+    round(lag_values(rob_multi_acf, i = i, j = j, max_lag = lag_max), 4)
+  }),
+  pair_labels
+)
+rob_multi_acovf_values <- setNames(
+  lapply(seq_len(nrow(pair_indices)), function(k) {
+    i <- pair_indices[k, 1]
+    j <- pair_indices[k, 2]
+    round(lag_values(rob_multi_acovf, i = i, j = j, max_lag = lag_max), 4)
+  }),
+  pair_labels
+)
+
+rob_multi_acf_values
+rob_multi_acovf_values
+
+## -----------------------------------------------------------------------------
+std_uni_acf <- setNames(
+  lapply(uni_stations, function(st) {
+    PerACF(pm10[, st], lag.max = lag_max_reg, type = "correlation", plot = FALSE)
+  }),
+  uni_stations
+)
+std_uni_acovf <- setNames(
+  lapply(uni_stations, function(st) {
+    PerACF(pm10[, st], lag.max = lag_max_reg, type = "covariance", plot = FALSE)
+  }),
+  uni_stations
+)
+stats_uni_acf <- setNames(
+  lapply(uni_stations, function(st) {
+    stats::acf(pm10[, st], lag.max = lag_max, type = "correlation", plot = FALSE, demean = TRUE)
+  }),
+  uni_stations
+)
+stats_uni_acovf <- setNames(
+  lapply(uni_stations, function(st) {
+    stats::acf(pm10[, st], lag.max = lag_max, type = "covariance", plot = FALSE, demean = TRUE)
+  }),
+  uni_stations
+)
+
+std_multi_acf <- PerACF(x_multi, lag.max = lag_max_reg, type = "correlation", plot = FALSE)
+std_multi_acovf <- PerACF(x_multi, lag.max = lag_max_reg, type = "covariance", plot = FALSE)
+stats_multi_acf <- stats::acf(x_multi, lag.max = lag_max, type = "correlation", plot = FALSE, demean = TRUE)
+stats_multi_acovf <- stats::acf(x_multi, lag.max = lag_max, type = "covariance", plot = FALSE, demean = TRUE)
+
+## -----------------------------------------------------------------------------
+uni_compare_acf <- setNames(
+  lapply(uni_stations, function(st) {
+    round(compare_three(
+      reg_standard = std_uni_acf[[st]],
+      reg_robust = rob_uni_acf[[st]],
+      stats_standard = stats_uni_acf[[st]],
+      max_lag = lag_max
+    ), 4)
+  }),
+  uni_stations
+)
+uni_compare_acovf <- setNames(
+  lapply(uni_stations, function(st) {
+    round(compare_three(
+      reg_standard = std_uni_acovf[[st]],
+      reg_robust = rob_uni_acovf[[st]],
+      stats_standard = stats_uni_acovf[[st]],
+      max_lag = lag_max
+    ), 4)
+  }),
+  uni_stations
+)
+
+uni_compare_acf
+uni_compare_acovf
+
+## -----------------------------------------------------------------------------
+multi_compare_acf <- setNames(
+  lapply(seq_len(nrow(pair_indices)), function(k) {
+    i <- pair_indices[k, 1]
+    j <- pair_indices[k, 2]
+    round(compare_three(
+      reg_standard = std_multi_acf,
+      reg_robust = rob_multi_acf,
+      stats_standard = stats_multi_acf,
+      i = i,
+      j = j,
+      max_lag = lag_max
+    ), 4)
+  }),
+  pair_labels
+)
+multi_compare_acovf <- setNames(
+  lapply(seq_len(nrow(pair_indices)), function(k) {
+    i <- pair_indices[k, 1]
+    j <- pair_indices[k, 2]
+    round(compare_three(
+      reg_standard = std_multi_acovf,
+      reg_robust = rob_multi_acovf,
+      stats_standard = stats_multi_acovf,
+      i = i,
+      j = j,
+      max_lag = lag_max
+    ), 4)
+  }),
+  pair_labels
+)
+
+multi_compare_acf
+multi_compare_acovf
+
+## -----------------------------------------------------------------------------
+lag0_cor_standard <- CovCorPer(x_multi, type = "correlation")
+lag0_cor_robust <- CovCorMPer(x_multi, type = "correlation")
+lag0_cor_stats <- stats_multi_acf$acf[1, , ]
+
+lag0_cov_standard <- CovCorPer(x_multi, type = "covariance")
+lag0_cov_robust <- CovCorMPer(x_multi, type = "covariance")
+lag0_cov_stats <- stats_multi_acovf$acf[1, , ]
+
+round(lag0_cor_standard, 4)
+round(lag0_cor_robust, 4)
+round(lag0_cor_stats, 4)
+round(lag0_cor_standard - lag0_cor_stats, 4)
+round(lag0_cor_robust - lag0_cor_standard, 4)
+
+round(lag0_cov_standard, 4)
+round(lag0_cov_robust, 4)
+round(lag0_cov_stats, 4)
+round(lag0_cov_standard - lag0_cov_stats, 4)
+round(lag0_cov_robust - lag0_cov_standard, 4)
+

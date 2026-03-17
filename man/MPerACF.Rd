@@ -4,8 +4,15 @@
 \alias{MPerACF}
 \title{Robust autocorrelation or autocovariance function estimation from the robust M-periodogram}
 \usage{
-MPerACF(x, lag.max = NULL, type = c("correlation", "covariance"),
-  plot = TRUE, na.action = na.fail, demean = TRUE, ...)
+MPerACF(
+  x,
+  lag.max = NULL,
+  type = c("correlation", "covariance"),
+  plot = TRUE,
+  na.action = na.fail,
+  demean = TRUE,
+  ...
+)
 }
 \arguments{
 \item{x}{a numeric vector or matrix.}

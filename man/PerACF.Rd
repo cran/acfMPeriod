@@ -4,8 +4,15 @@
 \alias{PerACF}
 \title{Autocorrelation or autocovariance function estimation from the periodogram}
 \usage{
-PerACF(x, lag.max = NULL, type = c("correlation", "covariance"),
-  plot = TRUE, na.action = na.fail, demean = TRUE, ...)
+PerACF(
+  x,
+  lag.max = NULL,
+  type = c("correlation", "covariance"),
+  plot = TRUE,
+  na.action = na.fail,
+  demean = TRUE,
+  ...
+)
 }
 \arguments{
 \item{x}{a numeric vector or matrix.}
